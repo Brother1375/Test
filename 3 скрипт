@@ -1,0 +1,64 @@
+import json
+import argparse
+import random
+
+def load_config(filename):
+    """Загружает конфигурационные шаблоны из файла."""
+    with open(filename, 'r') as file:
+        return json.load(file)
+
+
+def parse_version(version_string):
+    """Преобразует строку версии в кортеж чисел для удобного сравнения."""
+    return tuple(map(int, version_string.split('.')))
+
+
+def compare_versions(v1, v2):
+    """Сравнивает две версии, возвращает True, если v1 < v2."""
+    return parse_version(v1) < parse_version(v2)
+
+
+def generate_versions(config):
+    """Генерирует версии на основе шаблонов."""
+    generated_versions = set()
+    for template in config.values():
+        segments = template.split('.')
+        for idx, segment in enumerate(segments):
+            if segment == '*':
+                # Генератор заменяет '*' случайным числом от 0 до 10
+                new_segments = segments[:idx] + [str(random.randint(0, 10))]
+                # Второй вариант замены *
+                second_segment_value = int(new_segments[idx]) + random.choice([-1, 1])
+                second_new_segments = new_segments.copy()
+                second_new_segments[idx] = str(second_segment_value)
+                generated_versions.add('.'.join(new_segments))
+                generated_versions.add('.'.join(second_new_segments))
+    return sorted(generated_versions, key=parse_version)
+
+
+def find_old_versions(generated_versions, product_version):
+    """Находит версии, которые старше (менее свежие) заданной версии продукта."""
+    old_versions = [ver for ver in generated_versions if compare_versions(ver, product_version)]
+    return old_versions
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Скрипт для генерации и анализа версий на основе шаблонов.")
+    parser.add_argument("--version", required=True, help="Номер версии продукта")
+    parser.add_argument("--config-file", required=True, help="Имя конфигурационного файла с шаблонами")
+    args = parser.parse_args()
+
+    # Загрузка шаблонов из конфигурационного файла
+    config = load_config(args.config_file)
+    # Генерация версий
+    generated_versions = generate_versions(config)
+    # Поиск старых версий
+    old_versions = find_old_versions(generated_versions, args.version)
+
+    # Вывод результатов
+    print("Сгенерированные версии:\n", "\n".join(generated_versions))
+    print("\nСтаршие (более ранние) версии:\n", "\n".join(old_versions))
+
+
+if __name__ == "__main__":
+    main()
