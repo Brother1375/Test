@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# Получить список активных юнитов с именем foobar-*
+UNITS=$(systemctl list-units --type service --state active | grep '^foobar-' | awk '{print $1}')
+
+# Массив для отслеживания перемещённых сервисов
+MOVED_SERVICES=()
+
+# Перебрать юниты и провести миграцию
+for UNIT in ${UNITS}; do
+    SERVICE_NAME=${UNIT%%.service}
+    NAME=${SERVICE_NAME#foobar-}
+
+    echo "Processing service: $NAME..."
+
+    # 1. Остановить юнит
+    echo "- Stopping unit: $UNIT"
+    systemctl stop "$UNIT"
+
+    # 2. Перемещение рабочих директорий
+    SRC_DIR="/opt/misc/$NAME"
+    DST_DIR="/srv/data/$NAME"
+
+    if [[ ! -d "$SRC_DIR" ]]; then
+        echo "Warning: Source directory '$SRC_DIR' does not exist."
+        continue
+    fi
+
+    mkdir -p "$DST_DIR"
+    mv "$SRC_DIR/"* "$DST_DIR/"
+    rmdir "$SRC_DIR"
+
+    MOVED_SERVICES+=("$NAME")
+
+    # 3. Редактирование юнита (изменение путей)
+    SYSTEMD_UNIT_FILE="/etc/systemd/system/${UNIT}"
+
+    sed -i "s|WorkingDirectory=/opt/misc/$NAME|WorkingDirectory=/srv/data/$NAME|" "$SYSTEMD_UNIT_FILE"
+    sed -i "s|ExecStart=/opt/misc/$NAME/foobar-daemon|ExecStart=/srv/data/$NAME/foobar-daemon|" "$SYSTEMD_UNIT_FILE"
+
+    # 4. Перезапустить юнит
+    echo "- Restarting unit: $UNIT"
+    systemctl daemon-reload
+    systemctl restart "$UNIT"
+done
+
+echo "Services moved:"
+printf "%s\n" "${MOVED_SERVICES[@]}"
+
+exit 0
