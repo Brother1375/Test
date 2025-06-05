@@ -1,0 +1,70 @@
+import socket
+import struct
+from datetime import datetime, timezone
+
+# IP адрес публичного NTP-сервера (глобальные пулы NTP)
+NTP_SERVER = 'pool.ntp.org'
+TIME1970 = 2208988800  # Разница эпох (UNIX epoch vs NTP epoch)
+
+def fetch_ntp_time(ntp_server=NTP_SERVER):
+    """
+    Запрашивает текущее время с NTP-сервера и возвращает строку времени в ISO-формате.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(5)  # Максимальное время ожидания ответа
+            # Формат запроса NTP версии 4
+            packet = (
+                b'\x1b' +
+                47 * b'\0'
+            )
+            sock.sendto(packet, (
+                ntp_server, 123  # Стандартный порт NTP — 123
+            ))
+            resp_data, addr = sock.recvfrom(1024)
+            # Обработка полученного времени
+            seconds_since_1900 = struct.unpack('!12I', resp_data)[10]
+            seconds_since_epoch = (
+                seconds_since_1900 -
+                TIME1970
+            )
+            # Объект datetime с временной зоной UTC
+            received_time = datetime.fromtimestamp(seconds_since_epoch, tz=timezone.utc)
+            return received_time.isoformat()
+    except Exception as e:
+        print(f'Ошибка запроса к NTP-серверу: {e}')
+        return None
+
+
+def calculate_delta(received_time):
+    """
+    Рассчитывает разницу между локальным временем и временем NTP.
+    """
+    local_time = datetime.now(tz=timezone.utc)
+    fetched_timestamp = datetime.fromisoformat(received_time)
+    delta = abs((local_time - fetched_timestamp).total_seconds())
+    return delta
+
+
+def main():
+    deltas = []
+
+    for attempt in range(5):
+        fetched_time = fetch_ntp_time()
+        if fetched_time is not None:
+            delta = calculate_delta(fetched_time)
+            print(f"Полученное время: {fetched_time} UTC")
+            print(f"Дельта времени: {delta:.3f} секунд\n")
+            deltas.append(delta)
+        else:
+            print("Пропускаю попытку...\n")
+
+    if deltas:
+        avg_delta = sum(deltas) / len(deltas)
+        print(f"Средняя дельта времени: {avg_delta:.3f} секунд")
+    else:
+        print("Не удалось собрать достаточные данные.")
+
+
+if __name__ == "__main__":
+    main()
