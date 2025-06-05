@@ -1,0 +1,48 @@
+import os
+import sys
+import shutil
+import subprocess
+import tempfile
+import json
+import zipfile
+import glob
+from datetime import datetime
+
+REPOSITORY_URL = sys.argv[1]
+SOURCE_PATH = sys.argv[2]
+PRODUCT_VERSION = sys.argv[3]
+
+WORKING_DIR = tempfile.mkdtemp(prefix="build_")
+
+print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Начинаем сборку...")
+subprocess.run(['git', 'clone', '--depth', '1', REPOSITORY_URL, WORKING_DIR])
+
+SOURCE_ABSOLUTE_PATH = os.path.join(WORKING_DIR, SOURCE_PATH)
+
+# Сначала создаем version.json
+VERSION_JSON_CONTENT = {
+    "name": "hello world",
+    "version": PRODUCT_VERSION,
+    "files": sorted([os.path.basename(file) for file in glob.glob(os.path.join(SOURCE_ABSOLUTE_PATH, '*.*'))])
+}
+with open(os.path.join(SOURCE_ABSOLUTE_PATH, 'version.json'), 'w') as vf:
+    json.dump(VERSION_JSON_CONTENT, vf, indent=4)
+
+# Только после создания version.json производим очистку директорий
+for entry in os.scandir(WORKING_DIR):
+    if entry.is_dir() and entry.name != os.path.basename(SOURCE_PATH):
+        shutil.rmtree(entry.path)
+
+# Продолжаем упаковку
+ARCHIVE_NAME = f'{os.path.basename(SOURCE_PATH)}{datetime.now().strftime("%Y%m%d")}'
+ARCHIVE_FULL_PATH = os.path.join(WORKING_DIR, f'{ARCHIVE_NAME}.zip')
+with zipfile.ZipFile(ARCHIVE_FULL_PATH, mode='w') as zf:
+    for foldername, _, filenames in os.walk(SOURCE_ABSOLUTE_PATH):
+        for filename in filenames:
+            file_path = os.path.join(foldername, filename)
+            rel_path = os.path.relpath(file_path, SOURCE_ABSOLUTE_PATH)
+            zf.write(file_path, rel_path)
+
+# Чистим временные файлы
+shutil.rmtree(WORKING_DIR)
+print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] Архив собран: {ARCHIVE_FULL_PATH}")
